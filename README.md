@@ -58,7 +58,8 @@ terraform apply
 
 All 16 resources were created successfully.
 
-<img width="1362" height="516" alt="Pasted image 20260803224622" src="https://github.com/user-attachments/assets/239442f1-a430-4b3a-8dae-2f2c97890250" />
+<img width="1703" height="338" alt="image" src="https://github.com/user-attachments/assets/f573d321-0c52-498f-a759-ea34b95dbe68" />
+
 
 **8. Connected and verified.**
 
