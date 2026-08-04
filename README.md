@@ -1,2 +1,107 @@
-# 06-terraform-active-directory
-Automated deployment of a Windows Server 2022 Active Directory Domain Controller on Azure using Terraform, with Key Vault-managed secrets and a locked-down NSG.
+# Azure Active Directory Domain Controller
+
+Terraform · Azure · Active Directory Domain Services · Azure Key Vault
+
+---
+
+Deploying a Windows Server 2022 Active Directory Domain Controller on Azure, fully automated with Terraform and a Custom Script Extension. Passwords are auto-generated and stored in Azure Key Vault, and RDP access is locked to a single IP address.
+
+## The Business Problem
+
+Every Windows-based organization needs a central system that tracks user accounts, computers, and permissions. That's what Active Directory does. Instead of every machine on a network keeping its own separate list of who's allowed to log in, they all check in with one Domain Controller. Deploying that server by hand doesn't scale: if it needs to be rebuilt, or if a company needs five of them across five regions, someone clicking through the same 40-step wizard each time is slow and error-prone. This lab builds that domain controller as reusable, version-controlled infrastructure-as-code instead.
+
+## What Was Deployed
+
+| Component | Purpose |
+| --- | --- |
+| Resource Group | Container for every resource in the lab, so one command tears it all down |
+| Virtual Network + Subnet | Private network for the domain controller |
+| Public IP (Static) | Reachable address for RDP |
+| Network Security Group | Firewall rule allowing RDP (3389) from the administrator's IP only |
+| Network Interface | Connects the VM to the subnet and the public IP |
+| Windows Server 2022 VM | The domain controller itself |
+| Azure Key Vault | Stores the VM admin password and the AD recovery (DSRM) password, both auto-generated |
+| Custom Script Extension | Runs the PowerShell script that installs and configures Active Directory Domain Services the moment the VM boots |
+
+## Architecture
+
+<img width="1536" height="1024" alt="image" src="https://github.com/user-attachments/assets/0eb71602-ffb3-443a-a740-b80308b3ec78" />
+
+
+## Steps Taken
+
+**1. Scaffolded the project.** Set up `main.tf`, `variables.tf`, `outputs.tf`, `keyvault.tf`, `terraform.tfvars.example`, `.gitignore`, and a `scripts/` folder.
+
+**2. Wrote the AD install script.** `scripts/install-ad-ds.ps1` handles installing the AD DS Windows feature and promoting the server to a new forest, using placeholder tokens (`DOMAIN_NAME`, `DOMAIN_NETBIOS`, `DSRM_PASSWORD`) that Terraform fills in with real values at deploy time.
+
+**3. Built the Key Vault.** RBAC authorization, a random suffix for global name uniqueness, and two `random_password` resources so the admin and DSRM passwords are generated automatically rather than typed by hand.
+
+**4. Built the network and VM.** Resource group, VNet, subnet, public IP, NSG (RDP restricted to one IP), NIC, the VM itself, and the Custom Script Extension that runs the install script on boot.
+
+**5. Initialized, validated, and planned.**
+
+```bash
+terraform init
+terraform validate
+terraform plan
+```
+
+The plan came back clean: 16 resources queued, 0 errors.
+
+**6. Filled in real values.** Region `northcentralus`, a real domain name, and the administrator's actual public IP for the RDP rule.
+
+**7. Deployed.**
+
+```bash
+terraform apply
+```
+
+All 16 resources were created successfully.
+
+<img width="1362" height="516" alt="Pasted image 20260803224622" src="https://github.com/user-attachments/assets/239442f1-a430-4b3a-8dae-2f2c97890250" />
+
+**8. Connected and verified.**
+
+```fish
+xfreerdp /v:130.213.8.214 /u:'CORP\adadmin' /p:'********' /cert:ignore
+```
+
+
+```powershell
+Get-Service NTDS | Select-Object Name, Status
+# NTDS   Running
+
+Get-ADDomain
+# DNSRoot: corp.ace.com | NetBIOSName: CORP | DomainMode: Windows2016Domain
+
+Get-ADDomainController -Filter *
+# ad-ace | Enabled: True | IsGlobalCatalog: True
+# OperationMasterRoles: SchemaMaster, DomainNamingMaster, PDCEmulator, RIDMaster
+
+Resolve-DnsName corp.ace.com
+# corp.ace.com -> A -> 10.0.1.4
+```
+
+All four passed clean. The domain controller was holding every operations master role, correctly registered in its own domain, and resolving DNS for itself.
+
+<img width="1421" height="292" alt="Pasted image 20260804015936" src="https://github.com/user-attachments/assets/bade0907-6120-48ce-afb3-b40ab3595beb" />
+<img width="1410" height="785" alt="Pasted image 20260804015858" src="https://github.com/user-attachments/assets/0712c65d-bca7-47a9-8a1b-afce524b86b4" />
+<img width="1417" height="810" alt="Pasted image 20260804020032" src="https://github.com/user-attachments/assets/29952579-ab07-48ea-9ddc-b9bf3976aa5d" />
+<img width="1570" height="807" alt="Pasted image 20260804014859" src="https://github.com/user-attachments/assets/70036f47-632e-4428-8c11-6f68afe94873" />
+
+
+## Key Decisions
+
+**RDP restricted to one IP, not opened to everyone.** A wide-open RDP rule gets found and hammered by internet bots fast. An earlier lab in this portfolio had over 4,500 failed login attempts in 24 hours from exactly this mistake. Locking the NSG rule to a single known IP removes that exposure entirely.
+
+**Passwords generated by Terraform and stored in Key Vault, never typed by hand.** `random_password` resources generate the admin and DSRM passwords, and `azurerm_key_vault_secret` stores them in an encrypted vault. They're pulled out with an authenticated Azure CLI call when needed, never sitting in a plaintext file.
+
+**AD install logic lives in its own script file, not inline in Terraform.** Keeping `install-ad-ds.ps1` as a separate file makes it far easier to read and edit, compared to a single unreadable string buried inside `main.tf`.
+
+## Teardown
+
+```bash
+terraform destroy
+```
+
+Removes the resource group and every resource inside it: VM, disk, NIC, public IP, NSG, VNet, subnet, and the Key Vault.
