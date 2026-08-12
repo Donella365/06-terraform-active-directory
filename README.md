@@ -3,7 +3,7 @@
 Terraform · Azure · Active Directory Domain Services · Azure Key Vault
 
 ---
-## [▶️ Lab Walkthrough Video](https://www.loom.com)
+## [▶️ Lab Walkthrough Video](https://www.loom.com/share/0d90f1efa83841c6a5caa5cd9452002a)
 
 ## What This Lab Covers
 Deploying a Windows Server 2022 Active Directory Domain Controller on Azure, fully automated with Terraform and a Custom Script Extension. Passwords are auto-generated and stored in Azure Key Vault, and RDP access is locked to a single IP address.
